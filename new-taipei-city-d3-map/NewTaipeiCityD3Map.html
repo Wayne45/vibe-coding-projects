@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新北市各里地圖 (D3 Canvas)</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 D3.js 函式庫 -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        /* 確保 Canvas 填滿容器並保持響應式 */
+        #map-container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            aspect-ratio: 16 / 10; /* 保持地圖長寬比，可調整 */
+            position: relative;
+        }
+        canvas {
+            display: block;
+            background-color: #e6f7ff; /* 淺藍色背景 */
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            /* 讓 D3 接管游標樣式 */
+            cursor: grab; 
+        }
+        .tooltip {
+            position: absolute;
+            pointer-events: none;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 sm:p-8 font-[Inter]">
+
+    <div class="max-w-4xl mx-auto mb-6">
+        <h1 class="text-3xl font-extrabold text-gray-900 mb-2 text-center">新北市各里地圖</h1>
+        <p class="text-center text-gray-600">請載入 GeoJSON 資料以開始繪製。您可以使用檔案上傳或貼上內容兩種方式。</p>
+    </div>
+
+    <!-- GeoJSON 資料貼上與檔案載入區塊 -->
+    <div id="data-input-section" class="max-w-4xl mx-auto mb-6 p-4 bg-white rounded-xl shadow-lg">
+        <h2 class="text-xl font-bold mb-3 text-gray-700">GeoJSON 資料輸入與檔案載入</h2>
+        
+        <!-- 新增檔案上傳區塊 -->
+        <div class="mb-4 p-3 border border-dashed border-gray-300 rounded-lg bg-gray-50">
+            <label for="fileInput" class="block text-sm font-medium text-gray-700 mb-1">1. 選擇 GeoJSON 檔案 (.geojson/.json):</label>
+            <input type="file" id="fileInput" accept=".geojson,.json"
+                   class="w-full text-sm text-gray-900 cursor-pointer focus:outline-none">
+            <p id="fileStatus" class="text-sm mt-1 text-gray-500"></p>
+        </div>
+
+        <h3 class="text-lg font-semibold mb-2 text-gray-700">2. 或貼上 GeoJSON 內容：</h3>
+        <textarea id="jsonInput" rows="10" placeholder="您可以將 GeoJSON (FeatureCollection 格式) 內容貼在此處，然後點擊按鈕載入。"
+                  class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"></textarea>
+        <button id="loadPastedDataButton" 
+                class="mt-3 w-full px-6 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition duration-150 shadow-md">
+            載入貼上的資料
+        </button>
+        <p id="pasteStatus" class="text-sm mt-2 text-gray-500"></p>
+    </div>
+    <!-- 結束： GeoJSON 資料貼上與檔案載入區塊 -->
+    
+    <!-- 放大縮小按鈕 -->
+    <div id="zoomControls" class="flex justify-center space-x-4 mb-4 hidden">
+        <button id="zoomInButton" class="px-4 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 transition duration-150 shadow-lg" title="放大 (+)">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+        </button>
+        <button id="resetButton" class="px-4 py-2 bg-gray-500 text-white font-bold rounded-lg hover:bg-gray-600 transition duration-150 shadow-lg" title="重設視圖">
+            重設
+        </button>
+        <button id="zoomOutButton" class="px-4 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 transition duration-150 shadow-lg" title="縮小 (-)">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- 地圖容器 -->
+    <div id="map-container" class="max-w-4xl mx-auto border-4 border-blue-500/50 rounded-xl hidden">
+        <canvas id="mapCanvas"></canvas>
+        <div id="tooltip" class="tooltip"></div>
+    </div>
+
+    <script>
+        // 設定 Canvas 元素和環境
+        const canvas = document.getElementById('mapCanvas');
+        const ctx = canvas.getContext('2d');
+        const mapContainer = document.getElementById('map-container');
+        const tooltip = document.getElementById('tooltip');
+        const jsonInput = document.getElementById('jsonInput');
+        const loadButton = document.getElementById('loadPastedDataButton');
+        const pasteStatus = document.getElementById('pasteStatus');
+        const fileInput = document.getElementById('fileInput'); // 新增：檔案輸入欄位
+        const fileStatus = document.getElementById('fileStatus'); // 新增：檔案狀態顯示
+        const zoomControls = document.getElementById('zoomControls');
+        const zoomInButton = document.getElementById('zoomInButton');
+        const zoomOutButton = document.getElementById('zoomOutButton');
+        const resetButton = document.getElementById('resetButton'); 
+        
+        // 儲存地圖數據和 D3 相關物件
+        let newTaipeiData = null;
+        let mapBounds = null; 
+        let pathGenerator;
+        let projection;
+        let activeFeature = null;
+        let districts = null; 
+        
+        // --- 核心狀態管理 (完全由 D3 zoom behavior 接管) ---
+        let initialTransform = d3.zoomIdentity; 
+        let currentTransform = d3.zoomIdentity; 
+        let baseScaleK = 1; 
+        const MIN_ZOOM_FACTOR = 0.5; 
+        const MAX_ZOOM_FACTOR = 10; 
+        const ZOOM_SPEED = 1.4; 
+        
+        // D3 Zoom 行為物件
+        let d3ZoomBehavior; 
+
+        // --- 0. 數據分組邏輯 ---
+        
+        /**
+         * 根據 ADMIT (區/Township) 屬性對地圖特徵進行分組。
+         * @param {object} data GeoJSON FeatureCollection
+         * @returns {Map<string, Array<object>>}
+         */
+        function groupFeaturesByDistrict(data) {
+            const districtMap = new Map();
+            data.features.forEach(feature => {
+                // 使用 ADMIT 或 TOWNNAME 作為區域名稱的 fallback
+                const district = feature.properties.ADMIT || feature.properties.TOWNNAME;
+                if (district) {
+                    if (!districtMap.has(district)) {
+                        districtMap.set(district, []);
+                    }
+                    districtMap.get(district).push(feature);
+                }
+            });
+            return districtMap;
+        }
+
+
+        // --- 1. 投影設定 ---
+        
+        /**
+         * 僅用於計算地圖初始 Fit 到 Canvas 的 K, X, Y 值。
+         * @param {number} width Canvas 寬度 (CSS size)
+         * @param {number} height Canvas 高度 (CSS size)
+         */
+        function calculateInitialFit(width, height) {
+            if (!newTaipeiData) return;
+
+            // 確保只計算一次邊界
+            if (!mapBounds) {
+                 mapBounds = d3.geoPath().projection(null).bounds(newTaipeiData);
+            }
+            const [[x0, y0], [x1, y1]] = mapBounds;
+            const dx = x1 - x0;
+            const dy = y1 - y0;
+
+            // 1. 初始擬合比例 (Fit Scale)，給予 5% 邊緣
+            const scale = Math.min(width / dx, height / dy) * 0.95; 
+            baseScaleK = scale; 
+
+            // 2. 計算初始平移量 (Translate) 使地圖居中
+            const tx = (width - dx * scale) / 2 - x0 * scale;
+            
+            // 由於我們在 applyProjection 中反轉 Y 軸 (reflectY(true))，
+            // ty 需要調整為加上 y1 * scale，將北邊 (y1) 對齊 Canvas 上方
+            const ty = (height - dy * scale) / 2 + y1 * scale; 
+
+            // 設定初始 transform 物件
+            initialTransform = d3.zoomIdentity.translate(tx, ty).scale(scale);
+            currentTransform = initialTransform; // 初始時當前 transform 等於初始 transform
+        }
+
+        /**
+         * 應用當前的 D3 轉換到 D3 投影，並更新路徑生成器。
+         * 在初始化、resize 和所有互動 (zoom/pan) 中調用。
+         */
+        function applyProjection() {
+            if (!newTaipeiData || !currentTransform) return;
+            
+            // 創建或重置身份投影和路徑生成器
+            projection = d3.geoIdentity();
+            projection.reflectY(true); // 反轉 Y 軸，讓北方朝上
+            pathGenerator = d3.geoPath().projection(projection).context(ctx);
+
+            // 應用當前 transform 的 k (scale) 和 x, y (translate)
+            projection.scale(currentTransform.k).translate([currentTransform.x, currentTransform.y]);
+        }
+
+        /**
+         * 處理高 DPI 螢幕和容器大小變化，調整 Canvas 尺寸並重新計算投影。
+         * 窗口大小改變時，重設視圖到初始 Fit 狀態。
+         */
+        function resizeCanvas() {
+            const containerWidth = mapContainer.clientWidth;
+            const containerHeight = mapContainer.clientHeight;
+            
+            const dpi = window.devicePixelRatio || 1; 
+
+            // 設定 Canvas 的 CSS 尺寸
+            canvas.style.width = `${containerWidth}px`;
+            canvas.style.height = `${containerHeight}px`;
+
+            // 設定 Canvas 的繪圖緩衝區尺寸
+            canvas.width = containerWidth * dpi;
+            canvas.height = containerHeight * dpi;
+
+            // 重設 context 轉換矩陣，避免累計縮放
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            // 應用 DPI 縮放
+            ctx.scale(dpi, dpi);
+            
+            if (newTaipeiData) {
+                // 重新計算初始 Fit 狀態 (這會更新 initialTransform 和 baseScaleK)
+                calculateInitialFit(containerWidth, containerHeight); 
+                
+                // 如果 D3 Zoom 行為已初始化，則更新其範圍並重置其狀態
+                if (d3ZoomBehavior) {
+                    const newScaleExtent = [baseScaleK * MIN_ZOOM_FACTOR, baseScaleK * MAX_ZOOM_FACTOR];
+                    d3ZoomBehavior
+                        .scaleExtent(newScaleExtent);
+                    
+                    // 重設 D3 zoom 狀態到新的 Fit 狀態
+                    d3.select(canvas).call(d3ZoomBehavior.transform, initialTransform);
+                }
+
+                // 應用並繪圖 (d3ZoomBehavior.transform 會觸發 zoom event，但為保險起見再調用一次)
+                applyProjection(); 
+                drawMap();
+            }
+        }
+
+
+        // --- 2. 繪圖邏輯 (三階段繪圖，實現區邊界高亮) ---
+
+        /**
+         * 清空 Canvas 並繪製地圖。
+         */
+        function drawMap() {
+            // 確保數據和分組已準備好
+            if (!newTaipeiData || !pathGenerator || !districts) return; 
+
+            const width = mapContainer.clientWidth;
+            const height = mapContainer.clientHeight;
+            ctx.clearRect(0, 0, width, height);
+
+            // 取得當前懸停的里所屬的區名稱
+            const activeDistrictName = activeFeature ? (activeFeature.properties.ADMIT || activeFeature.properties.TOWNNAME) : null;
+
+            // --- Pass 1: 繪製所有里的底色和細邊界 ---
+            // 這為所有地圖區塊設置了基礎外觀，並繪製了分隔各里的細線。
+            newTaipeiData.features.forEach(feature => {
+                ctx.beginPath();
+                pathGenerator(feature);
+                
+                const districtName = feature.properties.ADMIT || feature.properties.TOWNNAME;
+                const isPartofActiveDistrict = districtName === activeDistrictName;
+
+                // Fill: 為游標所在的區塊使用不同的底色
+                ctx.fillStyle = isPartofActiveDistrict ? '#c5e1a5' : '#42a5f5'; // 淺綠色/藍色
+                ctx.strokeStyle = '#999999'; // 細灰線作為里之間的內部邊界
+                ctx.lineWidth = 0.5;
+                
+                ctx.fill();
+                ctx.stroke();
+            });
+
+            // --- Pass 2: 繪製活躍區的粗邊界 (實現「大筐」效果) ---
+            // 僅對游標所在的整個區進行粗邊框處理。
+            if (activeDistrictName) {
+                const activeDistrictFeatures = districts.get(activeDistrictName);
+                if (activeDistrictFeatures) {
+                    activeDistrictFeatures.forEach(feature => {
+                        ctx.beginPath();
+                        pathGenerator(feature);
+                        ctx.strokeStyle = '#000000'; // 粗黑線作為區的外部邊界
+                        ctx.lineWidth = 3; 
+                        ctx.stroke();
+                    });
+                }
+            }
+
+
+            // --- Pass 3: 高亮懸停的里 (覆蓋在最上層) ---
+            if (activeFeature) {
+                // 1. 重繪填色 (只針對懸停的里)
+                ctx.beginPath();
+                pathGenerator(activeFeature);
+                ctx.fillStyle = '#ff9800'; // 醒目橘色填色
+                ctx.fill();
+                
+                // 2. 描繪紅邊框 (只針對懸停的里)
+                ctx.beginPath();
+                pathGenerator(activeFeature);
+                ctx.strokeStyle = '#d32f2f'; // 醒目紅邊框
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+
+
+        // --- 3. 互動邏輯 (D3 Zoom & Hover) ---
+        
+        /**
+         * 更新地圖視圖 (用於 D3 Zoom event)
+         */
+        function updateMapView() {
+            applyProjection();
+            drawMap();
+            hideTooltip(); 
+        }
+
+        /**
+         * 綁定 D3 Zoom 行為到 Canvas。
+         */
+        function setupD3ZoomBehavior() {
+            // 創建 D3 Zoom 行為
+            d3ZoomBehavior = d3.zoom()
+                // 設定縮放範圍 (依賴 baseScaleK)
+                .scaleExtent([baseScaleK * MIN_ZOOM_FACTOR, baseScaleK * MAX_ZOOM_FACTOR])
+                // 綁定 zoom 事件處理函數
+                .on("zoom", (event) => {
+                    // D3 會自動將新的 transform 儲存在 event.transform 中
+                    currentTransform = event.transform;
+                    updateMapView();
+                });
+            
+            // 將 Zoom 行為應用到 Canvas 元素 (需要轉換為 D3 選取對象)
+            const canvasSelection = d3.select(canvas);
+            canvasSelection.call(d3ZoomBehavior);
+
+            // 初始化 D3 Zoom 行為的內部狀態為初始 Fit 狀態
+            d3ZoomBehavior.transform(canvasSelection, initialTransform);
+        }
+
+        /**
+         * 處理按鈕放大縮小 (使用 D3 內建方法)
+         * @param {number} factor 縮放因子 (例如：1.2 或 1/1.2)
+         */
+        function handleButtonClickZoom(factor) {
+            if (!newTaipeiData || !d3ZoomBehavior) return;
+
+            // 縮放中心設為 Canvas 中心點 (CSS 尺寸)
+            const center_x = mapContainer.clientWidth / 2;
+            const center_y = mapContainer.clientHeight / 2;
+
+            d3.select(canvas)
+                .transition() // 使用 transition 讓縮放更平滑
+                .duration(250)
+                .call(d3ZoomBehavior.scaleBy, factor, [center_x, center_y]); // 在中心點縮放
+        }
+        
+        /**
+         * 處理重設按鈕點擊事件
+         */
+        function handleResetButton() {
+            if (!newTaipeiData || !d3ZoomBehavior) return;
+            
+            d3.select(canvas)
+                .transition() 
+                .duration(500)
+                .call(d3ZoomBehavior.transform, initialTransform); // 轉換回初始 fit 狀態
+        }
+
+        /**
+         * 處理滑鼠移動事件 (Hover 邏輯)
+         * 注意：拖曳邏輯已由 D3 Zoom 接管
+         */
+        function handleMouseMove(event) {
+            if (!newTaipeiData || !pathGenerator) return;
+
+            const bounds = canvas.getBoundingClientRect();
+            // 取得滑鼠相對於 Canvas 的座標 (CSS 尺寸)
+            const x = event.clientX - bounds.left;
+            const y = event.clientY - bounds.top;
+
+            let foundFeature = null;
+
+            // 遍歷所有區塊，檢查游標是否在路徑內
+            for (const feature of newTaipeiData.features) {
+                ctx.beginPath();
+                pathGenerator(feature);
+
+                // 檢查該點是否在當前路徑內
+                if (ctx.isPointInPath(x, y)) {
+                    foundFeature = feature;
+                    break; 
+                }
+            }
+
+            // 更新活躍區塊和 Tooltip
+            if (foundFeature) {
+                if (foundFeature !== activeFeature) {
+                    activeFeature = foundFeature;
+                    drawMap(); // 重新繪圖以高亮
+                }
+                
+                // 修正：使用 ADMIT (區) 和 ADMIV (里) 屬性
+                const townName = foundFeature.properties.ADMIT || foundFeature.properties.TOWNNAME || '';
+                const villageName = foundFeature.properties.ADMIV || foundFeature.properties.VILLNAME || '';
+                const content = `${townName} - ${villageName}` || '名稱資訊缺失'; 
+                
+                updateTooltip(content, event.clientX, event.clientY);
+            } else {
+                if (activeFeature) {
+                    activeFeature = null;
+                    drawMap(); // 重新繪圖以移除高亮
+                }
+                hideTooltip();
+            }
+        }
+        
+        /**
+         * 顯示 Tooltip (顯示里的名稱)
+         */
+        function updateTooltip(content, x, y) {
+            tooltip.textContent = content;
+            tooltip.style.opacity = 1;
+            
+            // 調整 Tooltip 位置
+            let tooltipX = x + 10;
+            let tooltipY = y - 10;
+
+            const tooltipWidth = tooltip.offsetWidth;
+            const windowWidth = window.innerWidth;
+
+            if (tooltipX + tooltipWidth > windowWidth - 20) {
+                tooltipX = x - tooltipWidth - 10;
+            }
+            
+            tooltip.style.left = `${tooltipX}px`;
+            tooltip.style.top = `${tooltipY}px`;
+        }
+
+        /**
+         * 隱藏 Tooltip
+         */
+        function hideTooltip() {
+            tooltip.style.opacity = 0;
+        }
+
+        // --- 4. 數據載入和啟動 ---
+        
+        function showMapAndControls() {
+            mapContainer.classList.remove('hidden');
+            zoomControls.classList.remove('hidden');
+        }
+        
+        // --- 核心數據處理函數 ---
+        /**
+         * 處理 GeoJSON 數據，初始化地圖。
+         * @param {object} data GeoJSON FeatureCollection
+         * @param {string} source 數據來源 (File/Paste)
+         */
+        function processGeoJsonData(data, source) {
+            try {
+                if (data && data.type === "FeatureCollection") {
+                    newTaipeiData = data;
+                    districts = groupFeaturesByDistrict(newTaipeiData); 
+                    mapBounds = null; // 重設邊界
+                    
+                    showMapAndControls(); 
+                    resizeCanvas(); 
+                    setupD3ZoomBehavior();
+
+                    const successMessage = `成功載入 ${newTaipeiData.features.length} 個地圖特徵！(來源: ${source})`;
+
+                    // 根據來源更新狀態訊息
+                    // Update status message based on source
+                    if (source === 'URL') {
+                        pasteStatus.textContent = successMessage;
+                        pasteStatus.className = 'text-sm mt-2 text-green-600';
+                        fileStatus.textContent = '';
+                    } else if (source === '貼上內容') {
+                        pasteStatus.textContent = successMessage;
+                        pasteStatus.className = 'text-sm mt-2 text-green-600';
+                        fileStatus.textContent = ''; 
+                    } else if (source === '檔案上傳') {
+                        fileStatus.textContent = successMessage;
+                        fileStatus.className = 'text-sm mt-1 text-green-600';
+                        pasteStatus.textContent = ''; 
+                    }
+                    console.log(`地圖數據載入成功（來源: ${source}）。`);
+                    
+                } else {
+                    throw new Error("JSON 格式無效或不是 GeoJSON FeatureCollection。");
+                }
+            } catch (error) {
+                const errorMessage = `載入失敗: ${error.message}`;
+                if (source === 'URL' || source === '貼上內容') {
+                    pasteStatus.textContent = errorMessage;
+                    pasteStatus.className = 'text-sm mt-2 text-red-600';
+                } else if (source === '檔案上傳') {
+                    fileStatus.textContent = errorMessage;
+                    fileStatus.className = 'text-sm mt-1 text-red-600';
+                }
+                console.error("處理 GeoJSON 數據失敗:", error);
+            }
+        }
+
+        /**
+         * 處理貼上數據按鈕點擊事件。
+         */
+        function handleLoadPastedData() {
+            const pastedText = jsonInput.value.trim();
+            pasteStatus.textContent = '';
+            fileStatus.textContent = '';
+
+            if (!pastedText) {
+                pasteStatus.textContent = '錯誤：請先貼上 GeoJSON 內容！';
+                pasteStatus.className = 'text-sm mt-2 text-red-600';
+                return;
+            }
+
+            try {
+                const parsedData = JSON.parse(pastedText);
+                processGeoJsonData(parsedData, '貼上內容');
+            } catch (error) {
+                pasteStatus.textContent = `載入失敗：無效的 JSON 格式。`;
+                pasteStatus.className = 'text-sm mt-2 text-red-600';
+            }
+        }
+
+        /**
+         * 處理檔案輸入變動事件。
+         */
+        function handleFileChange(event) {
+            fileStatus.textContent = '';
+            pasteStatus.textContent = '';
+            const file = event.target.files[0];
+            
+            if (!file) {
+                // 如果沒有選擇檔案，清除狀態但不要報錯
+                return;
+            }
+            
+            // 立即顯示載入中
+            fileStatus.textContent = `正在讀取檔案: ${file.name}...`;
+            fileStatus.className = 'text-sm mt-1 text-gray-500';
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const parsedData = JSON.parse(e.target.result);
+                    processGeoJsonData(parsedData, '檔案上傳');
+                } catch (error) {
+                    fileStatus.textContent = `載入失敗：檔案內容不是有效的 GeoJSON/JSON 格式。`;
+                    fileStatus.className = 'text-sm mt-1 text-red-600';
+                    console.error("讀取檔案失敗:", error);
+                }
+            };
+            
+            reader.onerror = (e) => {
+                 fileStatus.textContent = `讀取檔案時發生錯誤: ${e.target.error.name}`;
+                 fileStatus.className = 'text-sm mt-1 text-red-600';
+                 console.error("FileReader Error:", e.target.error);
+            };
+
+            reader.readAsText(file);
+        }
+
+        async function fetchGeoJsonFromUrl(url) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error("Error fetching GeoJSON:", error);
+                return null;
+            }
+        }
+
+        async function loadDataAndInit() {
+            // 綁定事件監聽器
+            window.addEventListener('resize', resizeCanvas);
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mouseout', hideTooltip);
+            
+            loadButton.addEventListener('click', handleLoadPastedData); 
+            fileInput.addEventListener('change', handleFileChange); // 綁定檔案變動事件
+            zoomInButton.addEventListener('click', () => handleButtonClickZoom(ZOOM_SPEED)); 
+            zoomOutButton.addEventListener('click', () => handleButtonClickZoom(1 / ZOOM_SPEED)); 
+            resetButton.addEventListener('click', handleResetButton);
+
+            // Load GeoJSON from URL
+            const geoJsonUrl = 'https://github.com/Wayne45/vibe-coding-projects/blob/main/new-taipei-city-d3-map/NewTaipeiCity.geojson';
+            const geoJsonData = await fetchGeoJsonFromUrl(geoJsonUrl);
+
+            if (geoJsonData) {
+                processGeoJsonData(geoJsonData, 'URL');
+            } else {
+                // 提示用戶需要載入數據
+                pasteStatus.textContent = 'Failed to load GeoJSON from URL. Please paste GeoJSON content or select a file to load.';
+                pasteStatus.className = 'text-sm mt-2 text-red-600';
+            }
+        }
+
+        // Page load initialization
+        window.onload = async function() {
+            await loadDataAndInit();
+        };
+
+    </script>
+</body>
+</html>
