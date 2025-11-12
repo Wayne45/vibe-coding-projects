@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <title>Galton Board Game</title>
     <style>
         body {
@@ -15,27 +15,32 @@
             background: #222;
             font-family: Arial, sans-serif;
         }
+
         #gameContainer {
             position: relative;
             width: 400px;
             height: 600px;
         }
+
         canvas {
             border: 3px solid #fff;
             background: #1a1a1a;
             display: block;
         }
+
         #score {
             color: #fff;
             margin-top: 10px;
             font-size: 18px;
         }
+
         .instructions {
             color: #aaa;
             margin-top: 20px;
             font-size: 14px;
             width: 400px;
         }
+
         button {
             margin-top: 10px;
             padding: 10px 20px;
@@ -46,247 +51,244 @@
             border-radius: 5px;
             cursor: pointer;
         }
+
         button:hover {
             background: #3ab8af;
         }
     </style>
 </head>
 <body>
-    <div>
-        <div id="gameContainer">
-            <canvas id="canvas" width="400" height="600"></canvas>
-        </div>
-        <div id="score">Score: 0</div>
-        <button id="dropBtn">Drop Ball</button>
-        <div class="instructions">
-            <strong>Galton Board Game</strong><br>
-            Click "Drop Ball" to release a ball.<br>
-            Watch it bounce through the bumpers<br>
-            and land in a scoring cell!
-        </div>
+<div>
+    <div id="gameContainer">
+        <canvas height="600" id="canvas" width="400"></canvas>
     </div>
+    <div id="score">Score: 0</div>
+    <button id="dropBtn">Drop Ball</button>
+    <div class="instructions">
+        <strong>Galton Board Game</strong><br>
+        Click "Drop Ball" to release a ball.<br>
+        Watch it bounce through the bumpers<br>
+        and land in a scoring cell!
+    </div>
+</div>
 
-    <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
 
-        // Game variables
-        let score = 0;
-        const gravity = 0.5;
-        const friction = 0.98;
-        const ballRadius = 6;
+    // Game variables
+    let score = 0;
+    const gravity = 0.5;
+    const friction = 0.98;
+    const ballRadius = 6;
 
-        // Ball object
-        const ball = {
+    // Array to store multiple balls
+    const balls = [];
+
+    // Scoring cells at bottom
+    const cellWidth = 50;
+    const cellHeight = 60;
+    const cells = [];
+    const cellValues = [100, 500, 200, 1000, 300, 1000, 200, 500];
+
+    for (let i = 0; i < cellValues.length; i++) {
+        cells.push({
+            x: i * cellWidth,
+            y: canvas.height - cellHeight,
+            width: cellWidth,
+            height: cellHeight,
+            value: cellValues[i],
+            scored: false
+        });
+    }
+
+    // Bumpers (obstacles) - Staggered grid pattern (8 bumpers per row)
+    const bumpers = [
+        // Row 1 - Left aligned
+        {x: 25, y: 50, radius: 5},
+        {x: 75, y: 50, radius: 5},
+        {x: 125, y: 50, radius: 5},
+        {x: 175, y: 50, radius: 5},
+        {x: 225, y: 50, radius: 5},
+        {x: 275, y: 50, radius: 5},
+        {x: 325, y: 50, radius: 5},
+        {x: 375, y: 50, radius: 5},
+        // Row 2 - Right staggered
+        {x: 50, y: 75, radius: 5},
+        {x: 100, y: 75, radius: 5},
+        {x: 150, y: 75, radius: 5},
+        {x: 200, y: 75, radius: 5},
+        {x: 250, y: 75, radius: 5},
+        {x: 300, y: 75, radius: 5},
+        {x: 350, y: 75, radius: 5},
+        // Row 3 - Left aligned
+        {x: 25, y: 100, radius: 5},
+        {x: 75, y: 100, radius: 5},
+        {x: 125, y: 100, radius: 5},
+        {x: 175, y: 100, radius: 5},
+        {x: 225, y: 100, radius: 5},
+        {x: 275, y: 100, radius: 5},
+        {x: 325, y: 100, radius: 5},
+        {x: 375, y: 100, radius: 5},
+        // Row 4 - Right staggered
+        {x: 50, y: 125, radius: 5},
+        {x: 100, y: 125, radius: 5},
+        {x: 150, y: 125, radius: 5},
+        {x: 200, y: 125, radius: 5},
+        {x: 250, y: 125, radius: 5},
+        {x: 300, y: 125, radius: 5},
+        {x: 350, y: 125, radius: 5},
+        // Row 5 - Left aligned
+        {x: 25, y: 150, radius: 5},
+        {x: 75, y: 150, radius: 5},
+        {x: 125, y: 150, radius: 5},
+        {x: 175, y: 150, radius: 5},
+        {x: 225, y: 150, radius: 5},
+        {x: 275, y: 150, radius: 5},
+        {x: 325, y: 150, radius: 5},
+        {x: 375, y: 150, radius: 5},
+        // Row 6 - Right staggered
+        {x: 50, y: 175, radius: 5},
+        {x: 100, y: 175, radius: 5},
+        {x: 150, y: 175, radius: 5},
+        {x: 200, y: 175, radius: 5},
+        {x: 250, y: 175, radius: 5},
+        {x: 300, y: 175, radius: 5},
+        {x: 350, y: 175, radius: 5},
+        // Row 7 - Left aligned
+        {x: 25, y: 200, radius: 5},
+        {x: 75, y: 200, radius: 5},
+        {x: 125, y: 200, radius: 5},
+        {x: 175, y: 200, radius: 5},
+        {x: 225, y: 200, radius: 5},
+        {x: 275, y: 200, radius: 5},
+        {x: 325, y: 200, radius: 5},
+        {x: 375, y: 200, radius: 5},
+        // Row 8 - Right staggered
+        {x: 50, y: 225, radius: 5},
+        {x: 100, y: 225, radius: 5},
+        {x: 150, y: 225, radius: 5},
+        {x: 200, y: 225, radius: 5},
+        {x: 250, y: 225, radius: 5},
+        {x: 300, y: 225, radius: 5},
+        {x: 350, y: 225, radius: 5},
+        // Row 9 - Left aligned
+        {x: 25, y: 250, radius: 5},
+        {x: 75, y: 250, radius: 5},
+        {x: 125, y: 250, radius: 5},
+        {x: 175, y: 250, radius: 5},
+        {x: 225, y: 250, radius: 5},
+        {x: 275, y: 250, radius: 5},
+        {x: 325, y: 250, radius: 5},
+        {x: 375, y: 250, radius: 5},
+        // Row 10 - Right staggered
+        {x: 50, y: 275, radius: 5},
+        {x: 100, y: 275, radius: 5},
+        {x: 150, y: 275, radius: 5},
+        {x: 200, y: 275, radius: 5},
+        {x: 250, y: 275, radius: 5},
+        {x: 300, y: 275, radius: 5},
+        {x: 350, y: 275, radius: 5},
+        // Row 11 - Left aligned
+        {x: 25, y: 300, radius: 5},
+        {x: 75, y: 300, radius: 5},
+        {x: 125, y: 300, radius: 5},
+        {x: 175, y: 300, radius: 5},
+        {x: 225, y: 300, radius: 5},
+        {x: 275, y: 300, radius: 5},
+        {x: 325, y: 300, radius: 5},
+        {x: 375, y: 300, radius: 5},
+        // Row 12 - Right staggered
+        {x: 50, y: 325, radius: 5},
+        {x: 100, y: 325, radius: 5},
+        {x: 150, y: 325, radius: 5},
+        {x: 200, y: 325, radius: 5},
+        {x: 250, y: 325, radius: 5},
+        {x: 300, y: 325, radius: 5},
+        {x: 350, y: 325, radius: 5},
+        // Row 13 - Left aligned
+        {x: 25, y: 350, radius: 5},
+        {x: 75, y: 350, radius: 5},
+        {x: 125, y: 350, radius: 5},
+        {x: 175, y: 350, radius: 5},
+        {x: 225, y: 350, radius: 5},
+        {x: 275, y: 350, radius: 5},
+        {x: 325, y: 350, radius: 5},
+        {x: 375, y: 350, radius: 5},
+        // Row 14 - Right staggered
+        {x: 50, y: 375, radius: 5},
+        {x: 100, y: 375, radius: 5},
+        {x: 150, y: 375, radius: 5},
+        {x: 200, y: 375, radius: 5},
+        {x: 250, y: 375, radius: 5},
+        {x: 300, y: 375, radius: 5},
+        {x: 350, y: 375, radius: 5},
+        // Row 15 - Left aligned
+        {x: 25, y: 400, radius: 5},
+        {x: 75, y: 400, radius: 5},
+        {x: 125, y: 400, radius: 5},
+        {x: 175, y: 400, radius: 5},
+        {x: 225, y: 400, radius: 5},
+        {x: 275, y: 400, radius: 5},
+        {x: 325, y: 400, radius: 5},
+        {x: 375, y: 400, radius: 5},
+        // Row 16 - Right staggered
+        {x: 50, y: 425, radius: 5},
+        {x: 100, y: 425, radius: 5},
+        {x: 150, y: 425, radius: 5},
+        {x: 200, y: 425, radius: 5},
+        {x: 250, y: 425, radius: 5},
+        {x: 300, y: 425, radius: 5},
+        {x: 350, y: 425, radius: 5},
+        // Row 17 - Left aligned
+        {x: 25, y: 450, radius: 5},
+        {x: 75, y: 450, radius: 5},
+        {x: 125, y: 450, radius: 5},
+        {x: 175, y: 450, radius: 5},
+        {x: 225, y: 450, radius: 5},
+        {x: 275, y: 450, radius: 5},
+        {x: 325, y: 450, radius: 5},
+        {x: 375, y: 450, radius: 5},
+        // Row 18 - Right staggered
+        {x: 50, y: 475, radius: 5},
+        {x: 100, y: 475, radius: 5},
+        {x: 150, y: 475, radius: 5},
+        {x: 200, y: 475, radius: 5},
+        {x: 250, y: 475, radius: 5},
+        {x: 300, y: 475, radius: 5},
+        {x: 350, y: 475, radius: 5},
+        // Row 19 - Left aligned
+        {x: 25, y: 500, radius: 5},
+        {x: 75, y: 500, radius: 5},
+        {x: 125, y: 500, radius: 5},
+        {x: 175, y: 500, radius: 5},
+        {x: 225, y: 500, radius: 5},
+        {x: 275, y: 500, radius: 5},
+        {x: 325, y: 500, radius: 5},
+        {x: 375, y: 500, radius: 5}
+    ];
+
+    // Ball object creator function
+    function createBall() {
+        return {
             x: canvas.width / 2,
-            y: 50,
-            vx: 0,
-            vy: 0,
+            y: 30,
+            vx: (Math.random() - 0.5) * 2,
+            vy: 2,
             radius: ballRadius,
-            active: false,
             lastCollision: -100
         };
+    }
 
-        // Scoring cells at bottom
-        const cellWidth = 50;
-        const cellHeight = 60;
-        const cells = [];
-        const cellValues = [100, 500, 200, 1000, 300, 1000, 200, 500];
-        
-        for (let i = 0; i < cellValues.length; i++) {
-            cells.push({
-                x: i * cellWidth,
-                y: canvas.height - cellHeight,
-                width: cellWidth,
-                height: cellHeight,
-                value: cellValues[i],
-                scored: false
-            });
-        }
+    // Input handling
+    document.getElementById('dropBtn').addEventListener('click', () => {
+        balls.push(createBall());
+    });
 
-        // Bumpers (obstacles) - Staggered grid pattern (8 bumpers per row)
-        const bumpers = [
-            // Row 1 - Left aligned
-            { x: 25, y: 50, radius: 5 },
-            { x: 75, y: 50, radius: 5 },
-            { x: 125, y: 50, radius: 5 },
-            { x: 175, y: 50, radius: 5 },
-            { x: 225, y: 50, radius: 5 },
-            { x: 275, y: 50, radius: 5 },
-            { x: 325, y: 50, radius: 5 },
-            { x: 375, y: 50, radius: 5 },
-            // Row 2 - Right staggered
-            { x: 50, y: 75, radius: 5 },
-            { x: 100, y: 75, radius: 5 },
-            { x: 150, y: 75, radius: 5 },
-            { x: 200, y: 75, radius: 5 },
-            { x: 250, y: 75, radius: 5 },
-            { x: 300, y: 75, radius: 5 },
-            { x: 350, y: 75, radius: 5 },
-            // Row 3 - Left aligned
-            { x: 25, y: 100, radius: 5 },
-            { x: 75, y: 100, radius: 5 },
-            { x: 125, y: 100, radius: 5 },
-            { x: 175, y: 100, radius: 5 },
-            { x: 225, y: 100, radius: 5 },
-            { x: 275, y: 100, radius: 5 },
-            { x: 325, y: 100, radius: 5 },
-            { x: 375, y: 100, radius: 5 },
-            // Row 4 - Right staggered
-            { x: 50, y: 125, radius: 5 },
-            { x: 100, y: 125, radius: 5 },
-            { x: 150, y: 125, radius: 5 },
-            { x: 200, y: 125, radius: 5 },
-            { x: 250, y: 125, radius: 5 },
-            { x: 300, y: 125, radius: 5 },
-            { x: 350, y: 125, radius: 5 },
-            // Row 5 - Left aligned
-            { x: 25, y: 150, radius: 5 },
-            { x: 75, y: 150, radius: 5 },
-            { x: 125, y: 150, radius: 5 },
-            { x: 175, y: 150, radius: 5 },
-            { x: 225, y: 150, radius: 5 },
-            { x: 275, y: 150, radius: 5 },
-            { x: 325, y: 150, radius: 5 },
-            { x: 375, y: 150, radius: 5 },
-            // Row 6 - Right staggered
-            { x: 50, y: 175, radius: 5 },
-            { x: 100, y: 175, radius: 5 },
-            { x: 150, y: 175, radius: 5 },
-            { x: 200, y: 175, radius: 5 },
-            { x: 250, y: 175, radius: 5 },
-            { x: 300, y: 175, radius: 5 },
-            { x: 350, y: 175, radius: 5 },
-            // Row 7 - Left aligned
-            { x: 25, y: 200, radius: 5 },
-            { x: 75, y: 200, radius: 5 },
-            { x: 125, y: 200, radius: 5 },
-            { x: 175, y: 200, radius: 5 },
-            { x: 225, y: 200, radius: 5 },
-            { x: 275, y: 200, radius: 5 },
-            { x: 325, y: 200, radius: 5 },
-            { x: 375, y: 200, radius: 5 },
-            // Row 8 - Right staggered
-            { x: 50, y: 225, radius: 5 },
-            { x: 100, y: 225, radius: 5 },
-            { x: 150, y: 225, radius: 5 },
-            { x: 200, y: 225, radius: 5 },
-            { x: 250, y: 225, radius: 5 },
-            { x: 300, y: 225, radius: 5 },
-            { x: 350, y: 225, radius: 5 },
-            // Row 9 - Left aligned
-            { x: 25, y: 250, radius: 5 },
-            { x: 75, y: 250, radius: 5 },
-            { x: 125, y: 250, radius: 5 },
-            { x: 175, y: 250, radius: 5 },
-            { x: 225, y: 250, radius: 5 },
-            { x: 275, y: 250, radius: 5 },
-            { x: 325, y: 250, radius: 5 },
-            { x: 375, y: 250, radius: 5 },
-            // Row 10 - Right staggered
-            { x: 50, y: 275, radius: 5 },
-            { x: 100, y: 275, radius: 5 },
-            { x: 150, y: 275, radius: 5 },
-            { x: 200, y: 275, radius: 5 },
-            { x: 250, y: 275, radius: 5 },
-            { x: 300, y: 275, radius: 5 },
-            { x: 350, y: 275, radius: 5 },
-            // Row 11 - Left aligned
-            { x: 25, y: 300, radius: 5 },
-            { x: 75, y: 300, radius: 5 },
-            { x: 125, y: 300, radius: 5 },
-            { x: 175, y: 300, radius: 5 },
-            { x: 225, y: 300, radius: 5 },
-            { x: 275, y: 300, radius: 5 },
-            { x: 325, y: 300, radius: 5 },
-            { x: 375, y: 300, radius: 5 },
-            // Row 12 - Right staggered
-            { x: 50, y: 325, radius: 5 },
-            { x: 100, y: 325, radius: 5 },
-            { x: 150, y: 325, radius: 5 },
-            { x: 200, y: 325, radius: 5 },
-            { x: 250, y: 325, radius: 5 },
-            { x: 300, y: 325, radius: 5 },
-            { x: 350, y: 325, radius: 5 },
-            // Row 13 - Left aligned
-            { x: 25, y: 350, radius: 5 },
-            { x: 75, y: 350, radius: 5 },
-            { x: 125, y: 350, radius: 5 },
-            { x: 175, y: 350, radius: 5 },
-            { x: 225, y: 350, radius: 5 },
-            { x: 275, y: 350, radius: 5 },
-            { x: 325, y: 350, radius: 5 },
-            { x: 375, y: 350, radius: 5 },
-            // Row 14 - Right staggered
-            { x: 50, y: 375, radius: 5 },
-            { x: 100, y: 375, radius: 5 },
-            { x: 150, y: 375, radius: 5 },
-            { x: 200, y: 375, radius: 5 },
-            { x: 250, y: 375, radius: 5 },
-            { x: 300, y: 375, radius: 5 },
-            { x: 350, y: 375, radius: 5 },
-            // Row 15 - Left aligned
-            { x: 25, y: 400, radius: 5 },
-            { x: 75, y: 400, radius: 5 },
-            { x: 125, y: 400, radius: 5 },
-            { x: 175, y: 400, radius: 5 },
-            { x: 225, y: 400, radius: 5 },
-            { x: 275, y: 400, radius: 5 },
-            { x: 325, y: 400, radius: 5 },
-            { x: 375, y: 400, radius: 5 },
-            // Row 16 - Right staggered
-            { x: 50, y: 425, radius: 5 },
-            { x: 100, y: 425, radius: 5 },
-            { x: 150, y: 425, radius: 5 },
-            { x: 200, y: 425, radius: 5 },
-            { x: 250, y: 425, radius: 5 },
-            { x: 300, y: 425, radius: 5 },
-            { x: 350, y: 425, radius: 5 },
-            // Row 17 - Left aligned
-            { x: 25, y: 450, radius: 5 },
-            { x: 75, y: 450, radius: 5 },
-            { x: 125, y: 450, radius: 5 },
-            { x: 175, y: 450, radius: 5 },
-            { x: 225, y: 450, radius: 5 },
-            { x: 275, y: 450, radius: 5 },
-            { x: 325, y: 450, radius: 5 },
-            { x: 375, y: 450, radius: 5 },
-            // Row 18 - Right staggered
-            { x: 50, y: 475, radius: 5 },
-            { x: 100, y: 475, radius: 5 },
-            { x: 150, y: 475, radius: 5 },
-            { x: 200, y: 475, radius: 5 },
-            { x: 250, y: 475, radius: 5 },
-            { x: 300, y: 475, radius: 5 },
-            { x: 350, y: 475, radius: 5 },
-            // Row 19 - Left aligned
-            { x: 25, y: 500, radius: 5 },
-            { x: 75, y: 500, radius: 5 },
-            { x: 125, y: 500, radius: 5 },
-            { x: 175, y: 500, radius: 5 },
-            { x: 225, y: 500, radius: 5 },
-            { x: 275, y: 500, radius: 5 },
-            { x: 325, y: 500, radius: 5 },
-            { x: 375, y: 500, radius: 5 }
-        ];
-
-        // Input handling
-        document.getElementById('dropBtn').addEventListener('click', () => {
-            if (!ball.active) {
-                // Reset cells
-                cells.forEach(cell => cell.scored = false);
-                
-                // Launch ball
-                ball.x = canvas.width / 2;
-                ball.y = 30;
-                ball.vx = (Math.random() - 0.5) * 2;
-                ball.vy = 2;
-                ball.active = true;
-            }
-        });
-
-        function update() {
-            if (!ball.active) return;
+    function update() {
+        // Update each ball
+        for (let i = balls.length - 1; i >= 0; i--) {
+            const ball = balls[i];
 
             // Apply gravity
             ball.vy += gravity;
@@ -318,16 +320,18 @@
                     ball.x > cell.x &&
                     ball.x < cell.x + cell.width &&
                     !cell.scored) {
-                    
+
                     score += cell.value;
                     cell.scored = true;
-                    ball.active = false;
+                    balls.splice(i, 1); // Remove the ball
+                    break; // Exit the loop since we've removed this ball
                 }
             }
 
             // Ball out of bounds (lost)
             if (ball.y > canvas.height + 50) {
-                ball.active = false;
+                balls.splice(i, 1); // Remove the ball
+                continue;
             }
 
             // Bumper collisions
@@ -340,103 +344,107 @@
                     // Calculate collision normal (pointing away from bumper)
                     const nx = dx / distance;
                     const ny = dy / distance;
-                    
+
                     // Calculate tangent (perpendicular to normal)
                     const tx = -ny;
                     const ty = nx;
-                    
+
                     // Separate ball from bumper
                     const overlap = (ball.radius + bumper.radius) - distance;
                     ball.x += nx * (overlap + 2);
                     ball.y += ny * (overlap + 2);
-                    
+
                     // Calculate velocity components along normal and tangent
                     const velocityDotNormal = ball.vx * nx + ball.vy * ny;
                     const velocityDotTangent = ball.vx * tx + ball.vy * ty;
-                    
+
                     // Only bounce if moving towards bumper
                     if (velocityDotNormal < 0) {
                         // Strong bounce with restitution, preserve tangent velocity
                         const restitution = 1.3;
                         const normalVel = -velocityDotNormal * restitution;
-                        
+
                         // Reduce tangent friction slightly for deflection
                         const tangentVel = velocityDotTangent * 0.8;
-                        
+
                         // Reconstruct velocity
                         ball.vx = normalVel * nx + tangentVel * tx;
                         ball.vy = normalVel * ny + tangentVel * ty;
-                        
+
                         // Add slight random deflection for variation
                         const randomDeflection = (Math.random() - 0.5) * 2;
                         ball.vx += randomDeflection;
-                        
+
                         // Limit max speed
                         const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                         if (speed > 16) {
                             ball.vx = (ball.vx / speed) * 16;
                             ball.vy = (ball.vy / speed) * 16;
                         }
-                        
+
                         ball.lastCollision = Date.now();
                     }
                 }
             }
         }
+    }
 
-        function draw() {
-            // Clear canvas
-            ctx.fillStyle = '#1a1a1a';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+    function draw() {
+        // Clear canvas
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Draw bumpers
-            ctx.fillStyle = '#ff6b6b';
-            for (let bumper of bumpers) {
-                ctx.beginPath();
-                ctx.arc(bumper.x, bumper.y, bumper.radius, 0, Math.PI * 2);
-                ctx.fill();
-            }
+        // Draw bumpers
+        ctx.fillStyle = '#ff6b6b';
+        for (let bumper of bumpers) {
+            ctx.beginPath();
+            ctx.arc(bumper.x, bumper.y, bumper.radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
-            // Draw scoring cells
-            for (let cell of cells) {
-                if (cell.scored) {
-                    ctx.fillStyle = '#90ee90';
-                } else {
-                    ctx.fillStyle = '#444';
-                }
-                ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
-                ctx.strokeStyle = '#666';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(cell.x, cell.y, cell.width, cell.height);
-                
-                // Draw value
-                ctx.fillStyle = '#fff';
-                ctx.font = 'bold 14px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText(cell.value.toString(), cell.x + cell.width / 2, cell.y + cell.height / 2 + 5);
-            }
-
-            // Draw ball
-            if (ball.active) {
-                ctx.fillStyle = '#ffd93d';
-                ctx.beginPath();
-                ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-                ctx.fill();
+        // Draw scoring cells
+        for (let cell of cells) {
+            if (cell.scored) {
+                ctx.fillStyle = '#90ee90';
             } else {
-                ctx.fillStyle = '#888';
-                ctx.font = '14px Arial';
-                ctx.fillText('Click "Drop Ball" to play', 110, 50);
+                ctx.fillStyle = '#444';
             }
+            ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(cell.x, cell.y, cell.width, cell.height);
+
+            // Draw value
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(cell.value.toString(), cell.x + cell.width / 2, cell.y + cell.height / 2 + 5);
         }
 
-        function gameLoop() {
-            update();
-            draw();
-            document.getElementById('score').textContent = `Score: ${score}`;
-            requestAnimationFrame(gameLoop);
+        // Draw balls
+        ctx.fillStyle = '#ffd93d';
+        for (let ball of balls) {
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            ctx.fill();
         }
 
-        gameLoop();
-    </script>
+        // Draw instruction text
+        if (balls.length === 0) {
+            ctx.fillStyle = '#888';
+            ctx.font = '14px Arial';
+            ctx.fillText('Click "Drop Ball" to play', 200, 25);
+        }
+    }
+
+    function gameLoop() {
+        update();
+        draw();
+        document.getElementById('score').textContent = `Score: ${score}`;
+        requestAnimationFrame(gameLoop);
+    }
+
+    gameLoop();
+</script>
 </body>
 </html>
