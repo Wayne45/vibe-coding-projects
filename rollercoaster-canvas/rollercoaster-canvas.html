@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roller Coaster Animation - Canvas + JavaScript</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .info {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: monospace;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div class="info">
+        Roller Coaster Animation (Canvas + JS)<br>
+        Ported from Swift RollerCoasterLayer
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Animation state
+        let animationId;
+        let startTime = Date.now();
+
+        // Resize canvas to full window
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Helper: Get point on line between two points
+        function getPoint(pointOne, pointTwo, referenceX) {
+            const x1 = pointOne.x;
+            const y1 = pointOne.y;
+            const x2 = pointTwo.x;
+            const y2 = pointTwo.y;
+            const a = (y2 - y1) / (x2 - x1);
+            const b = y1 - a * x1;
+            return a * referenceX + b;
+        }
+
+        // Helper: Get point on a path at distance t (0 to 1)
+        function getPointOnPath(path, t) {
+            const pathLength = path.getTotalLength();
+            const point = path.getPointAtLength(t * pathLength);
+            return point;
+        }
+
+        // Helper: Get angle at point on path
+        function getAngleOnPath(path, t) {
+            const pathLength = path.getTotalLength();
+            const point1 = path.getPointAtLength(Math.max(0, t * pathLength - 1));
+            const point2 = path.getPointAtLength(Math.min(pathLength, t * pathLength + 1));
+            return Math.atan2(point2.y - point1.y, point2.x - point1.x);
+        }
+
+        // Create SVG path for calculations (not displayed)
+        function createSVGPath(pathString) {
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', pathString);
+            svg.appendChild(path);
+            document.body.appendChild(svg);
+            svg.style.display = 'none';
+            return path;
+        }
+
+        class RollerCoasterAnimation {
+            constructor(width, height) {
+                this.width = width;
+                this.height = height;
+
+                // Create path elements for car animation calculations
+                this.yellowPathSVG = this.createYellowPathSVG();
+                this.greenPathSVG = this.createGreenPathSVG();
+
+                // Car animation state
+                this.yellowCars = [];
+                this.greenCars = [];
+                this.cloudX = width + 63;
+
+                // Initialize cars
+                for (let i = 0; i < 5; i++) {
+                    this.yellowCars.push({
+                        offset: i * 0.07 / 6, // Stagger by 0.07s over 6s duration
+                        width: 17,
+                        height: 11
+                    });
+                    this.greenCars.push({
+                        offset: i * 0.085 / 6, // Stagger by 0.085s over 6s duration
+                        width: 17,
+                        height: 11
+                    });
+                }
+            }
+
+            createYellowPathSVG() {
+                const w = this.width;
+                const h = this.height;
+                const pathString = `M 0,${h - 70} C ${w/6},${h - 200} ${w/2.5},${h+50} ${w/1.5},200 Q ${w-100},50 ${w+10},${h/3}`;
+                return createSVGPath(pathString);
+            }
+
+            createGreenPathSVG() {
+                const w = this.width;
+                const h = this.height;
+
+                // Match the Swift path exactly for green cars
+                // Path includes a full loop, so we need to break it into two arcs
+                const centerX = w/1.9;
+                const centerY = h - 140;
+                const radius = 63;
+
+                // Arc goes from 90° to 270° (first half of loop)
+                const arcX1 = centerX + radius * Math.cos(Math.PI * 1.5);
+                const arcY1 = centerY + radius * Math.sin(Math.PI * 1.5);
+
+                // Then from 270° to 90° (second half of loop, completing the circle)
+                const arcX2 = centerX + radius * Math.cos(Math.PI * 0.5);
+                const arcY2 = centerY + radius * Math.sin(Math.PI * 0.5);
+
+                const pathString = `
+                    M ${w+10},${h-7}
+                    L ${w+10},${h-77}
+                    Q ${w-120},193 ${w/1.8},${h-77}
+                    L ${arcX2},${arcY2}
+                    A ${radius},${radius} 0 0 1 ${arcX1},${arcY1}
+                    A ${radius},${radius} 0 0 1 ${arcX2},${arcY2}
+                    C ${w/1.8-60},${h-67} 150,${h/2.3-7} 0,${h-107}
+                `;
+                return createSVGPath(pathString);
+            }
+
+            // Draw gradient background
+            drawGradientLayer() {
+                const gradient = ctx.createLinearGradient(0, 0, this.width, this.height);
+                gradient.addColorStop(0, 'rgb(178, 226, 248)');
+                gradient.addColorStop(1, 'rgb(232, 244, 193)');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, this.width, this.height - 20);
+            }
+
+            // Draw back mountains (Mountain Two)
+            drawBackMountainLayer() {
+                const w = this.width;
+                const h = this.height;
+
+                // Mountain Two (white base)
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.moveTo(w/4, h - 90);
+                ctx.lineTo(w/2.7, 200);
+                ctx.lineTo(w/1.8, h - 85);
+                ctx.lineTo(w/1.6, h - 125);
+                ctx.lineTo(w/1.35, h - 70);
+                ctx.lineTo(0, h);
+                ctx.fill();
+
+                // Mountain Two detail layer (dark purple)
+                ctx.fillStyle = 'rgb(75, 65, 111)';
+                ctx.beginPath();
+                ctx.moveTo(0, h);
+                ctx.lineTo(w/4, h - 90);
+                const path1H = getPoint({x: w/4, y: h - 90}, {x: w/2.7, y: 200}, w/4 + 50);
+                const path2H = getPoint({x: w/1.8, y: h - 85}, {x: w/2.7, y: 200}, w/2.2);
+                const path3H = getPoint({x: w/1.8, y: h - 85}, {x: w/1.6, y: h - 125}, w/1.67);
+                const path4H = getPoint({x: w/1.35, y: h - 70}, {x: w/1.6, y: h - 125}, w/1.50);
+
+                ctx.lineTo(w/4 + 50, path1H);
+                ctx.lineTo(w/4 + 70, path1H + 15);
+                ctx.lineTo(w/4 + 90, path1H);
+                ctx.lineTo(w/4 + 110, path1H + 15);
+                ctx.lineTo(w/2.2, path2H);
+                ctx.lineTo(w/1.8, h - 85);
+                ctx.lineTo(w/1.67, path3H);
+                ctx.lineTo(w/1.65, path3H + 5);
+                ctx.lineTo(w/1.60, path3H - 2);
+                ctx.lineTo(w/1.58, path4H + 2);
+                ctx.lineTo(w/1.55, path4H - 5);
+                ctx.lineTo(w/1.50, path4H);
+                ctx.lineTo(w/1.35, h - 70);
+                ctx.lineTo(0, h);
+                ctx.fill();
+            }
+
+            // Draw front mountain (Mountain One) - will hide cars behind it
+            drawFrontMountainLayer() {
+                const w = this.width;
+                const h = this.height;
+
+                // Mountain One (white base)
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.moveTo(0, h - 120);
+                ctx.lineTo(100, 100);
+                ctx.lineTo(w/3, h - 100);
+                ctx.lineTo(w/1.5, h - 50);
+                ctx.lineTo(0, h);
+                ctx.fill();
+
+                // Mountain One detail layer (purple)
+                ctx.fillStyle = 'rgb(104, 92, 157)';
+                ctx.beginPath();
+                ctx.moveTo(0, h - 120);
+                const pathOneHeight = getPoint({x: 0, y: h - 120}, {x: 100, y: 100}, 55);
+                const pathTwoHeight = getPoint({x: 100, y: 100}, {x: w/3, y: h - 100}, 160);
+                ctx.lineTo(55, pathOneHeight);
+                ctx.lineTo(70, pathOneHeight + 15);
+                ctx.lineTo(90, pathOneHeight);
+                ctx.lineTo(110, pathOneHeight + 25);
+                ctx.lineTo(130, pathOneHeight - 5);
+                ctx.lineTo(160, pathTwoHeight);
+                ctx.lineTo(w/3, h - 100);
+                ctx.lineTo(w/1.5, h - 50);
+                ctx.lineTo(0, h);
+                ctx.fill();
+            }
+
+            // Draw grassland
+            drawGrasslandLayer() {
+                const w = this.width;
+                const h = this.height;
+
+                // Grassland One
+                ctx.fillStyle = 'rgb(82, 177, 44)';
+                ctx.beginPath();
+                ctx.moveTo(0, h - 20);
+                ctx.lineTo(0, h - 100);
+                ctx.quadraticCurveTo(w/6, h - 100, w/3, h - 20);
+                ctx.fill();
+
+                // Grassland Two
+                ctx.fillStyle = 'rgb(92, 195, 52)';
+                ctx.beginPath();
+                ctx.moveTo(0, h - 20);
+                ctx.quadraticCurveTo(w/2, h - 100, w, h - 60);
+                ctx.lineTo(w, h - 20);
+                ctx.fill();
+            }
+
+            // Draw ground
+            drawGroundLayer() {
+                const h = this.height;
+                const w = this.width;
+
+                // Create pattern-like ground
+                ctx.fillStyle = 'rgb(139, 69, 19)';
+                ctx.fillRect(0, h - 20, w, 20);
+
+                // Add lines for texture
+                ctx.strokeStyle = 'rgb(101, 67, 33)';
+                ctx.lineWidth = 1;
+                for (let x = 0; x < w; x += 30) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, h - 20);
+                    ctx.lineTo(x, h);
+                    ctx.stroke();
+                }
+            }
+
+            // Draw yellow track
+            drawYellowPathLayer() {
+                const w = this.width;
+                const h = this.height;
+
+                // Fill
+                ctx.fillStyle = 'rgb(210, 179, 54)';
+                ctx.beginPath();
+                ctx.moveTo(0, h - 70);
+                ctx.bezierCurveTo(w/6, h - 200, w/2.5, h+50, w/1.5, 200);
+                ctx.quadraticCurveTo(w-100, 50, w+10, h/3);
+                ctx.lineTo(w+10, h+10);
+                ctx.lineTo(0, h+10);
+                ctx.fill();
+
+                // Stroke
+                ctx.strokeStyle = 'rgb(210, 179, 54)';
+                ctx.lineWidth = 5;
+                ctx.beginPath();
+                ctx.moveTo(0, h - 70);
+                ctx.bezierCurveTo(w/6, h - 200, w/2.5, h+50, w/1.5, 200);
+                ctx.quadraticCurveTo(w-100, 50, w+10, h/3);
+                ctx.stroke();
+
+                // Dashed center line
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([1, 5]);
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(0, h - 70);
+                ctx.bezierCurveTo(w/6, h - 200, w/2.5, h+50, w/1.5, 200);
+                ctx.quadraticCurveTo(w-100, 50, w+10, h/3);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Draw green track
+            drawGreenPathLayer() {
+                const w = this.width;
+                const h = this.height;
+
+                // Fill
+                ctx.fillStyle = 'rgb(0, 147, 163)';
+                ctx.beginPath();
+                ctx.moveTo(w+10, h);
+                ctx.lineTo(w+10, h - 70);
+                ctx.quadraticCurveTo(w - 120, 200, w/1.8, h - 70);
+                ctx.bezierCurveTo(w/1.9 - 60, h - 60, 150, h/2.3, 0, h - 100);
+                ctx.lineTo(-100, h+10);
+                ctx.fill();
+
+                // Stroke with arc/loop
+                ctx.strokeStyle = 'rgb(248,2,2)';
+                ctx.lineWidth = 5;
+                ctx.beginPath();
+                ctx.moveTo(w+10, h);
+                ctx.lineTo(w+10, h - 70);
+                ctx.quadraticCurveTo(w - 120, 200, w/1.8, h - 70);
+                ctx.arc(w/1.9, h - 140, 70, Math.PI * 0.5, Math.PI * 2.5, false);
+                ctx.bezierCurveTo(w/1.8 - 60, h - 60, 150, h/2.3, 0, h - 100);
+                ctx.stroke();
+
+                // Dashed center line
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([1, 5]);
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(w+10, h);
+                ctx.lineTo(w+10, h - 70);
+                ctx.quadraticCurveTo(w - 120, 200, w/1.8, h - 70);
+                ctx.arc(w/1.9, h - 140, 70, Math.PI * 0.5, Math.PI * 2.5, false);
+                ctx.bezierCurveTo(w/1.8 - 60, h - 60, 150, h/2.3, 0, h - 100);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Draw tree
+            drawTree(x, y, size) {
+                // Trunk
+                ctx.fillStyle = 'rgb(92, 51, 23)';
+                ctx.fillRect(x - size/6, y, size/3, size * 1.5);
+
+                // Leaves
+                ctx.fillStyle = 'rgb(45, 80, 22)';
+                ctx.beginPath();
+                ctx.ellipse(x, y, size/2, size, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw all trees
+            drawTreeLayer() {
+                const w = this.width;
+                const h = this.height;
+
+                // Background trees (smaller, lighter)
+                ctx.globalAlpha = 0.6;
+                this.drawTree(w-170, h - 75, 9);
+                this.drawTree(w-10, h - 80, 9);
+                ctx.globalAlpha = 1.0;
+
+                // Foreground trees
+                this.drawTree(5, h - 43, 6.5);
+                this.drawTree(55, h - 43, 3.5);
+                this.drawTree(70, h - 43, 3.5);
+                this.drawTree(w/3+15, h - 43, 6.5);
+                this.drawTree(w/3+25, h - 43, 3.5);
+                this.drawTree(w-130, h - 43, 3.5);
+                this.drawTree(w-160, h - 43, 3.5);
+
+                // Larger trees
+                this.drawTree(10, h - 52, 9);
+                this.drawTree(60, h - 52, 9);
+                this.drawTree(w/3, h - 52, 9);
+                this.drawTree(w-150, h - 52, 9);
+            }
+
+            // Draw cloud
+            drawCloud(time) {
+                // Cloud moves from right to left over 40 seconds
+                const cloudSpeed = this.width + 126; // Total distance to travel
+                const cloudDuration = 40000; // 40 seconds in ms
+                this.cloudX = this.width + 63 - ((time % cloudDuration) / cloudDuration) * cloudSpeed;
+
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.beginPath();
+                ctx.ellipse(this.cloudX, 40, 20, 7, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(this.cloudX + 15, 38, 18, 8, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(this.cloudX + 30, 40, 15, 6, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw car
+            drawCar(x, y, angle, color) {
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(angle);
+
+                // Car body
+                ctx.fillStyle = color;
+                ctx.fillRect(-8.5, -5.5, 17, 11);
+
+                // Add simple details
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.fillRect(-6, -4, 5, 4);
+                ctx.fillRect(1, -4, 5, 4);
+
+                ctx.restore();
+            }
+
+            // Animate cars
+            animateCars(time) {
+                const duration = 6000; // 6 seconds per cycle
+
+                // Yellow cars
+                this.yellowCars.forEach(car => {
+                    const t = ((time % duration) / duration + car.offset) % 1;
+                    const point = getPointOnPath(this.yellowPathSVG, t);
+                    const angle = getAngleOnPath(this.yellowPathSVG, t);
+                    this.drawCar(point.x, point.y - 7, angle, '#FF6B35');
+                });
+
+                // Green cars
+                this.greenCars.forEach(car => {
+                    const t = ((time % duration) / duration + car.offset) % 1;
+                    const point = getPointOnPath(this.greenPathSVG, t);
+                    const angle = getAngleOnPath(this.greenPathSVG, t);
+                    this.drawCar(point.x, point.y, angle, '#4ECDC4');
+                });
+            }
+
+            // Main render method
+            render(time) {
+                // Clear canvas
+                ctx.clearRect(0, 0, this.width, this.height);
+
+                // Draw layers in order (back to front) with cars hidden behind front mountain
+                this.drawGradientLayer();
+                this.drawBackMountainLayer();
+                this.drawGrasslandLayer();
+                this.drawYellowPathLayer();
+                this.drawGreenPathLayer();
+                this.animateCars(time); // Draw cars before front mountain
+                this.drawFrontMountainLayer(); // Front mountain occludes cars
+                this.drawGroundLayer();
+                this.drawCloud(time);
+                this.drawTreeLayer();
+            }
+        }
+
+        // Create animation instance
+        let animation = new RollerCoasterAnimation(canvas.width, canvas.height);
+
+        // Animation loop
+        function animate() {
+            const currentTime = Date.now() - startTime;
+            animation.render(currentTime);
+            animationId = requestAnimationFrame(animate);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            animation = new RollerCoasterAnimation(canvas.width, canvas.height);
+        });
+
+        // Start animation
+        animate();
+
+        console.log('Roller Coaster Canvas Animation Started!');
+        console.log('Ported from Swift RollerCoasterLayer.swift');
+    </script>
+</body>
+</html>
