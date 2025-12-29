@@ -43,32 +43,9 @@
 
     <div class="max-w-4xl mx-auto mb-6">
         <h1 class="text-3xl font-extrabold text-gray-900 mb-2 text-center">新北市各里地圖</h1>
-        <p class="text-center text-gray-600">請載入 GeoJSON 資料以開始繪製。您可以使用檔案上傳或貼上內容兩種方式。</p>
+        <p id="intro-text" class="text-center text-gray-600">請載入 GeoJSON 資料以開始繪製。您可以使用檔案上傳或貼上內容兩種方式。</p>
     </div>
 
-    <!-- GeoJSON 資料貼上與檔案載入區塊 -->
-    <div id="data-input-section" class="max-w-4xl mx-auto mb-6 p-4 bg-white rounded-xl shadow-lg">
-        <h2 class="text-xl font-bold mb-3 text-gray-700">GeoJSON 資料輸入與檔案載入</h2>
-        
-        <!-- 新增檔案上傳區塊 -->
-        <div class="mb-4 p-3 border border-dashed border-gray-300 rounded-lg bg-gray-50">
-            <label for="fileInput" class="block text-sm font-medium text-gray-700 mb-1">1. 選擇 GeoJSON 檔案 (.geojson/.json):</label>
-            <input type="file" id="fileInput" accept=".geojson,.json"
-                   class="w-full text-sm text-gray-900 cursor-pointer focus:outline-none">
-            <p id="fileStatus" class="text-sm mt-1 text-gray-500"></p>
-        </div>
-
-        <h3 class="text-lg font-semibold mb-2 text-gray-700">2. 或貼上 GeoJSON 內容：</h3>
-        <textarea id="jsonInput" rows="10" placeholder="您可以將 GeoJSON (FeatureCollection 格式) 內容貼在此處，然後點擊按鈕載入。"
-                  class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"></textarea>
-        <button id="loadPastedDataButton" 
-                class="mt-3 w-full px-6 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition duration-150 shadow-md">
-            載入貼上的資料
-        </button>
-        <p id="pasteStatus" class="text-sm mt-2 text-gray-500"></p>
-    </div>
-    <!-- 結束： GeoJSON 資料貼上與檔案載入區塊 -->
-    
     <!-- 放大縮小按鈕 -->
     <div id="zoomControls" class="flex justify-center space-x-4 mb-4 hidden">
         <button id="zoomInButton" class="px-4 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 transition duration-150 shadow-lg" title="放大 (+)">
@@ -87,10 +64,39 @@
     </div>
 
     <!-- 地圖容器 -->
-    <div id="map-container" class="max-w-4xl mx-auto border-4 border-blue-500/50 rounded-xl hidden">
+    <div id="map-container" class="max-w-4xl mx-auto mb-6 border-4 border-blue-500/50 rounded-xl hidden">
         <canvas id="mapCanvas"></canvas>
         <div id="tooltip" class="tooltip"></div>
     </div>
+
+    <!-- GeoJSON 資料貼上與檔案載入區塊 -->
+    <div id="data-input-section" class="max-w-4xl mx-auto mb-6 p-4 bg-white rounded-xl shadow-lg">
+        <h2 id="data-input-title" class="text-xl font-bold mb-3 text-gray-700">GeoJSON 資料輸入與檔案載入</h2>
+
+        <!-- 新增檔案上傳區塊 -->
+        <div id="file-upload-section" class="mb-4 p-3 border border-dashed border-gray-300 rounded-lg bg-gray-50">
+            <label for="fileInput" class="block text-sm font-medium text-gray-700 mb-1">1. 選擇 GeoJSON 檔案 (.geojson/.json):</label>
+            <input type="file" id="fileInput" accept=".geojson,.json"
+                   class="w-full text-sm text-gray-900 cursor-pointer focus:outline-none">
+            <p id="fileStatus" class="text-sm mt-1 text-gray-500"></p>
+        </div>
+
+        <div id="paste-section">
+            <h3 class="text-lg font-semibold mb-2 text-gray-700">2. 或貼上 GeoJSON 內容：</h3>
+            <textarea id="jsonInput" rows="10" placeholder="您可以將 GeoJSON (FeatureCollection 格式) 內容貼在此處，然後點擊按鈕載入。"
+                      class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"></textarea>
+            <button id="loadPastedDataButton"
+                    class="mt-3 w-full px-6 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition duration-150 shadow-md">
+                載入貼上的資料
+            </button>
+        </div>
+        <p id="loadStatus" class="text-sm mt-2 text-gray-500"></p>
+        <button id="showInputButton"
+                class="mt-3 w-full px-6 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 transition duration-150 shadow-md hidden">
+            載入其他資料
+        </button>
+    </div>
+    <!-- 結束： GeoJSON 資料貼上與檔案載入區塊 -->
 
     <script>
         // 設定 Canvas 元素和環境
@@ -100,9 +106,13 @@
         const tooltip = document.getElementById('tooltip');
         const jsonInput = document.getElementById('jsonInput');
         const loadButton = document.getElementById('loadPastedDataButton');
-        const pasteStatus = document.getElementById('pasteStatus');
-        const fileInput = document.getElementById('fileInput'); // 新增：檔案輸入欄位
-        const fileStatus = document.getElementById('fileStatus'); // 新增：檔案狀態顯示
+        const fileInput = document.getElementById('fileInput');
+        const loadStatus = document.getElementById('loadStatus');
+        const fileUploadSection = document.getElementById('file-upload-section');
+        const pasteSection = document.getElementById('paste-section');
+        const dataInputTitle = document.getElementById('data-input-title');
+        const introText = document.getElementById('intro-text');
+        const showInputButton = document.getElementById('showInputButton');
         const zoomControls = document.getElementById('zoomControls');
         const zoomInButton = document.getElementById('zoomInButton');
         const zoomOutButton = document.getElementById('zoomOutButton');
@@ -458,6 +468,14 @@
             mapContainer.classList.remove('hidden');
             zoomControls.classList.remove('hidden');
         }
+
+        function handleShowInputFields() {
+            fileUploadSection.classList.remove('hidden');
+            pasteSection.classList.remove('hidden');
+            dataInputTitle.textContent = 'GeoJSON 資料輸入與檔案載入';
+            showInputButton.classList.add('hidden');
+            loadStatus.textContent = '';
+        }
         
         // --- 核心數據處理函數 ---
         /**
@@ -469,44 +487,33 @@
             try {
                 if (data && data.type === "FeatureCollection") {
                     newTaipeiData = data;
-                    districts = groupFeaturesByDistrict(newTaipeiData); 
+                    districts = groupFeaturesByDistrict(newTaipeiData);
                     mapBounds = null; // 重設邊界
-                    
-                    showMapAndControls(); 
-                    resizeCanvas(); 
+
+                    showMapAndControls();
+                    resizeCanvas();
                     setupD3ZoomBehavior();
 
                     const successMessage = `成功載入 ${newTaipeiData.features.length} 個地圖特徵！(來源: ${source})`;
 
-                    // 根據來源更新狀態訊息
-                    // Update status message based on source
-                    if (source === 'URL') {
-                        pasteStatus.textContent = successMessage;
-                        pasteStatus.className = 'text-sm mt-2 text-green-600';
-                        fileStatus.textContent = '';
-                    } else if (source === '貼上內容') {
-                        pasteStatus.textContent = successMessage;
-                        pasteStatus.className = 'text-sm mt-2 text-green-600';
-                        fileStatus.textContent = ''; 
-                    } else if (source === '檔案上傳') {
-                        fileStatus.textContent = successMessage;
-                        fileStatus.className = 'text-sm mt-1 text-green-600';
-                        pasteStatus.textContent = ''; 
-                    }
+                    // Hide input sections and intro text, show only success message
+                    introText.classList.add('hidden');
+                    fileUploadSection.classList.add('hidden');
+                    pasteSection.classList.add('hidden');
+                    dataInputTitle.textContent = '載入狀態';
+                    loadStatus.textContent = successMessage;
+                    loadStatus.className = 'text-sm mt-2 text-green-600';
+                    showInputButton.classList.remove('hidden');
+
                     console.log(`地圖數據載入成功（來源: ${source}）。`);
-                    
+
                 } else {
                     throw new Error("JSON 格式無效或不是 GeoJSON FeatureCollection。");
                 }
             } catch (error) {
                 const errorMessage = `載入失敗: ${error.message}`;
-                if (source === 'URL' || source === '貼上內容') {
-                    pasteStatus.textContent = errorMessage;
-                    pasteStatus.className = 'text-sm mt-2 text-red-600';
-                } else if (source === '檔案上傳') {
-                    fileStatus.textContent = errorMessage;
-                    fileStatus.className = 'text-sm mt-1 text-red-600';
-                }
+                loadStatus.textContent = errorMessage;
+                loadStatus.className = 'text-sm mt-2 text-red-600';
                 console.error("處理 GeoJSON 數據失敗:", error);
             }
         }
@@ -516,12 +523,11 @@
          */
         function handleLoadPastedData() {
             const pastedText = jsonInput.value.trim();
-            pasteStatus.textContent = '';
-            fileStatus.textContent = '';
+            loadStatus.textContent = '';
 
             if (!pastedText) {
-                pasteStatus.textContent = '錯誤：請先貼上 GeoJSON 內容！';
-                pasteStatus.className = 'text-sm mt-2 text-red-600';
+                loadStatus.textContent = '錯誤：請先貼上 GeoJSON 內容！';
+                loadStatus.className = 'text-sm mt-2 text-red-600';
                 return;
             }
 
@@ -529,8 +535,8 @@
                 const parsedData = JSON.parse(pastedText);
                 processGeoJsonData(parsedData, '貼上內容');
             } catch (error) {
-                pasteStatus.textContent = `載入失敗：無效的 JSON 格式。`;
-                pasteStatus.className = 'text-sm mt-2 text-red-600';
+                loadStatus.textContent = `載入失敗：無效的 JSON 格式。`;
+                loadStatus.className = 'text-sm mt-2 text-red-600';
             }
         }
 
@@ -538,18 +544,17 @@
          * 處理檔案輸入變動事件。
          */
         function handleFileChange(event) {
-            fileStatus.textContent = '';
-            pasteStatus.textContent = '';
+            loadStatus.textContent = '';
             const file = event.target.files[0];
-            
+
             if (!file) {
                 // 如果沒有選擇檔案，清除狀態但不要報錯
                 return;
             }
-            
+
             // 立即顯示載入中
-            fileStatus.textContent = `正在讀取檔案: ${file.name}...`;
-            fileStatus.className = 'text-sm mt-1 text-gray-500';
+            loadStatus.textContent = `正在讀取檔案: ${file.name}...`;
+            loadStatus.className = 'text-sm mt-2 text-gray-500';
 
             const reader = new FileReader();
             reader.onload = (e) => {
@@ -557,15 +562,15 @@
                     const parsedData = JSON.parse(e.target.result);
                     processGeoJsonData(parsedData, '檔案上傳');
                 } catch (error) {
-                    fileStatus.textContent = `載入失敗：檔案內容不是有效的 GeoJSON/JSON 格式。`;
-                    fileStatus.className = 'text-sm mt-1 text-red-600';
+                    loadStatus.textContent = `載入失敗：檔案內容不是有效的 GeoJSON/JSON 格式。`;
+                    loadStatus.className = 'text-sm mt-2 text-red-600';
                     console.error("讀取檔案失敗:", error);
                 }
             };
-            
+
             reader.onerror = (e) => {
-                 fileStatus.textContent = `讀取檔案時發生錯誤: ${e.target.error.name}`;
-                 fileStatus.className = 'text-sm mt-1 text-red-600';
+                 loadStatus.textContent = `讀取檔案時發生錯誤: ${e.target.error.name}`;
+                 loadStatus.className = 'text-sm mt-2 text-red-600';
                  console.error("FileReader Error:", e.target.error);
             };
 
@@ -592,8 +597,9 @@
             canvas.addEventListener('mousemove', handleMouseMove);
             canvas.addEventListener('mouseout', hideTooltip);
             
-            loadButton.addEventListener('click', handleLoadPastedData); 
-            fileInput.addEventListener('change', handleFileChange); // 綁定檔案變動事件
+            loadButton.addEventListener('click', handleLoadPastedData);
+            fileInput.addEventListener('change', handleFileChange);
+            showInputButton.addEventListener('click', handleShowInputFields);
             zoomInButton.addEventListener('click', () => handleButtonClickZoom(ZOOM_SPEED)); 
             zoomOutButton.addEventListener('click', () => handleButtonClickZoom(1 / ZOOM_SPEED)); 
             resetButton.addEventListener('click', handleResetButton);
@@ -606,8 +612,8 @@
                 processGeoJsonData(geoJsonData, 'URL');
             } else {
                 // 提示用戶需要載入數據
-                pasteStatus.textContent = 'Failed to load GeoJSON from URL. Please paste GeoJSON content or select a file to load.';
-                pasteStatus.className = 'text-sm mt-2 text-red-600';
+                loadStatus.textContent = '無法從 URL 載入 GeoJSON。請貼上 GeoJSON 內容或選擇檔案載入。';
+                loadStatus.className = 'text-sm mt-2 text-red-600';
             }
         }
 
